@@ -9,10 +9,12 @@ package com.apptentive.android.sdk.module.engagement.interaction.view.survey;
 import android.app.Activity;
 import android.content.DialogInterface;
 import android.os.Bundle;
+import android.text.TextUtils;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
 import com.apptentive.android.sdk.ApptentiveInternal;
 import com.apptentive.android.sdk.Log;
 import com.apptentive.android.sdk.R;
@@ -26,6 +28,7 @@ import com.apptentive.android.sdk.module.survey.OnSurveyFinishedListener;
 import com.apptentive.android.sdk.module.survey.OnSurveyQuestionAnsweredListener;
 import com.apptentive.android.sdk.storage.ApptentiveDatabase;
 import com.apptentive.android.sdk.util.Util;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -40,23 +43,15 @@ public class SurveyInteractionView extends InteractionView<SurveyInteraction> {
 	private static final String EVENT_QUESTION_RESPONSE = "question_response";
 
 	private static final String KEY_SURVEY_SUBMITTED = "survey_submitted";
+	private static final String KEY_SURVEY_DATA = "survey_data";
 	private boolean surveySubmitted = false;
 
-	private static SurveyState surveyState;
-	private static JSONObject data;
+	private SurveyState surveyState;
 
 	public SurveyInteractionView(SurveyInteraction interaction) {
 		super(interaction);
 		if (surveyState == null) {
 			surveyState = new SurveyState(interaction);
-		}
-		if (data == null) {
-			data = new JSONObject();
-			try {
-				data.put("id", interaction.getId());
-			} catch (JSONException e) {
-				// Never happens.
-			}
 		}
 	}
 
@@ -65,6 +60,7 @@ public class SurveyInteractionView extends InteractionView<SurveyInteraction> {
 
 		if (savedInstanceState != null) {
 			surveySubmitted = savedInstanceState.getBoolean(KEY_SURVEY_SUBMITTED, false);
+			surveyState = savedInstanceState.getParcelable(KEY_SURVEY_DATA);
 		}
 
 		if (interaction == null || surveySubmitted) {
@@ -88,7 +84,7 @@ public class SurveyInteractionView extends InteractionView<SurveyInteraction> {
 		title.setText(interaction.getName());
 
 		String descriptionText = interaction.getDescription();
-		if (descriptionText != null) {
+		if (!TextUtils.isEmpty(descriptionText)) {
 			TextView description = (TextView) activity.findViewById(R.id.description);
 			description.setText(descriptionText);
 			description.setVisibility(View.VISIBLE);
@@ -114,7 +110,7 @@ public class SurveyInteractionView extends InteractionView<SurveyInteraction> {
 					activity.finish();
 				}
 
-				EngagementModule.engageInternal(activity, interaction, EVENT_SUBMIT, data.toString());
+				EngagementModule.engageInternal(activity, interaction, EVENT_SUBMIT);
 				ApptentiveDatabase.getInstance(activity).addPayload(new SurveyResponse(interaction, surveyState));
 				Log.d("Survey Submitted.");
 				callListener(true);
@@ -176,15 +172,19 @@ public class SurveyInteractionView extends InteractionView<SurveyInteraction> {
 	void sendMetricForQuestion(Activity activity, Question question) {
 		String questionId = question.getId();
 		if (!surveyState.isMetricSent(questionId) && surveyState.isQuestionValid(question)) {
-			String answerData = String.format("{\"id\":\"%s\",\"survey_id\":\"%s\"}", question.getId(), interaction.getId());
-			EngagementModule.engageInternal(activity, interaction, EVENT_QUESTION_RESPONSE, answerData);
+			JSONObject answerData = new JSONObject();
+			try {
+				answerData.put("id", question.getId());
+			} catch (JSONException e) {
+				// Never happens.
+			}
+			EngagementModule.engageInternal(activity, interaction, EVENT_QUESTION_RESPONSE, answerData.toString());
 			surveyState.markMetricSent(questionId);
 		}
 	}
 
 	private void cleanup() {
 		surveyState = null;
-		data = null;
 	}
 
 
@@ -192,7 +192,7 @@ public class SurveyInteractionView extends InteractionView<SurveyInteraction> {
 	public boolean onBackPressed(Activity activity) {
 		// If this survey is required, do not let it be dismissed when the user clicks the back button.
 		if (!interaction.isRequired()) {
-			EngagementModule.engageInternal(activity, interaction, EVENT_CANCEL, data.toString());
+			EngagementModule.engageInternal(activity, interaction, EVENT_CANCEL);
 			callListener(false);
 			cleanup();
 			return true;
@@ -212,6 +212,7 @@ public class SurveyInteractionView extends InteractionView<SurveyInteraction> {
 	public void onSaveInstanceState(Bundle outState) {
 		super.onSaveInstanceState(outState);
 		outState.putBoolean(KEY_SURVEY_SUBMITTED, surveySubmitted);
+		outState.putParcelable(KEY_SURVEY_DATA, surveyState);
 	}
 
 	@Override
